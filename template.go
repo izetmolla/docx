@@ -16,6 +16,7 @@ type TemplateReplacer struct {
 	document *Document
 	tmpl     *template.Template
 	data     TemplateData
+	debug    bool // Enable debug logging
 }
 
 // NewTemplateReplacer creates a new template replacer for the given document
@@ -31,6 +32,18 @@ func (tr *TemplateReplacer) SetData(data TemplateData) {
 	tr.data = data
 }
 
+// SetDebug enables or disables debug logging
+func (tr *TemplateReplacer) SetDebug(debug bool) {
+	tr.debug = debug
+}
+
+// debugLog logs a message if debug mode is enabled
+func (tr *TemplateReplacer) debugLog(format string, args ...interface{}) {
+	if tr.debug {
+		fmt.Printf("[DEBUG] "+format+"\n", args...)
+	}
+}
+
 // AddFuncs adds custom functions to the template
 func (tr *TemplateReplacer) AddFuncs(funcMap template.FuncMap) {
 	tr.tmpl = tr.tmpl.Funcs(funcMap)
@@ -43,22 +56,28 @@ func (tr *TemplateReplacer) ExecuteTemplate() error {
 		return fmt.Errorf("template data not set, call SetData() first")
 	}
 
+	tr.debugLog("Starting template execution...")
+
 	// Extract all template placeholders from the document
 	templatePlaceholders, err := tr.extractTemplatePlaceholders()
 	if err != nil {
 		return fmt.Errorf("failed to extract template placeholders: %w", err)
 	}
 
+	tr.debugLog("Found %d template placeholders", len(templatePlaceholders))
+
 	// Process each template placeholder in reverse order to avoid position conflicts
 	// This ensures that earlier positions remain valid after replacements
 	for i := len(templatePlaceholders) - 1; i >= 0; i-- {
 		placeholder := templatePlaceholders[i]
+		tr.debugLog("Processing placeholder: %s", placeholder.TemplateContent)
 		err := tr.processTemplatePlaceholder(placeholder)
 		if err != nil {
 			return fmt.Errorf("failed to process template placeholder %s: %w", placeholder.TemplateContent, err)
 		}
 	}
 
+	tr.debugLog("Template execution completed successfully")
 	return nil
 }
 
@@ -81,6 +100,7 @@ func (tr *TemplateReplacer) extractTemplatePlaceholders() ([]*TemplatePlaceholde
 func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlaceholder) error {
 	// Check if the template references missing fields BEFORE executing
 	if tr.hasMissingFields(placeholder.TemplateContent) {
+		tr.debugLog("Skipping placeholder %s - missing fields detected", placeholder.TemplateContent)
 		// Skip this placeholder - leave it unchanged in the document
 		return nil
 	}
@@ -98,6 +118,7 @@ func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlac
 		// Check if the error is due to missing field/property
 		// If so, skip this placeholder instead of failing
 		if tr.isMissingFieldError(err) {
+			tr.debugLog("Skipping placeholder %s - execution error indicates missing field: %v", placeholder.TemplateContent, err)
 			// Skip this placeholder - leave it unchanged in the document
 			return nil
 		}
@@ -107,9 +128,12 @@ func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlac
 	// Check if the result contains "<no value>" which indicates missing fields
 	result := buf.String()
 	if strings.Contains(result, "<no value>") {
+		tr.debugLog("Skipping placeholder %s - result contains '<no value>'", placeholder.TemplateContent)
 		// Skip this placeholder - leave it unchanged in the document
 		return nil
 	}
+
+	tr.debugLog("Replacing placeholder %s with result: %s", placeholder.TemplateContent, result)
 
 	// Replace the placeholder with the executed result
 	err = tr.replacePlaceholder(placeholder, result)
@@ -175,18 +199,22 @@ func (tr *TemplateReplacer) hasMissingFields(templateContent string) bool {
 // fieldExists checks if a field exists in the data structure
 func (tr *TemplateReplacer) fieldExists(fieldName string) bool {
 	if tr.data == nil {
+		tr.debugLog("Field %s: data is nil", fieldName)
 		return false
 	}
 
 	// Handle map[string]interface{}
 	if dataMap, ok := tr.data.(map[string]interface{}); ok {
 		_, exists := dataMap[fieldName]
+		tr.debugLog("Field %s: exists in map = %v", fieldName, exists)
 		return exists
 	}
 
 	// Handle structs - use reflection to check if field exists
 	// This is a simplified check - for complex nested fields, we'd need more sophisticated logic
-	return tr.checkStructField(fieldName)
+	exists := tr.checkStructField(fieldName)
+	tr.debugLog("Field %s: exists in struct = %v", fieldName, exists)
+	return exists
 }
 
 // checkStructField checks if a field exists in a struct using reflection

@@ -15,6 +15,11 @@ This library provides template-based processing for docx documents using Go's st
 - **Zero Dependencies**: Built with Go standard library only
 - **Advanced Features**: Conditional logic, loops, custom functions, and complex data structures
 - **Fragmentation Handling**: Automatically handles WordprocessingML fragmentation issues
+- **Debug Mode**: Comprehensive debug logging for troubleshooting template issues
+- **Missing Field Handling**: Gracefully skips missing fields without corrupting documents
+- **Convenience Functions**: One-line template processing with automatic output file generation
+- **Cloud Storage Ready**: Return processed documents as bytes for direct upload to MinIO, S3, etc.
+- **Serverless Processing**: Process templates entirely in memory - perfect for AWS Lambda, Cloud Functions
 
 ## Installation
 
@@ -23,6 +28,83 @@ go get github.com/izetmolla/docx
 ```
 
 ## Quick Start
+
+### Simple One-Line Processing
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Data structure
+    data := map[string]interface{}{
+        "name":    "John Doe",
+        "email":   "john@example.com",
+        "company": "Tech Corp",
+    }
+
+    // Process template in one line - automatically creates "template_output.docx"
+    err := docx.CompleteTemplate("template.docx", data)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Println("Document processed successfully!")
+}
+```
+
+### Advanced Processing with Custom Functions
+
+```go
+package main
+
+import (
+    "log"
+    "strings"
+    "text/template"
+    "time"
+    
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Define custom functions
+    funcMap := template.FuncMap{
+        "upper": strings.ToUpper,
+        "formatDate": func(t time.Time) string {
+            return t.Format("2006-01-02")
+        },
+    }
+
+    // Set data
+    data := map[string]interface{}{
+        "user": map[string]interface{}{
+            "name":     "John Doe",
+            "email":    "john@example.com",
+            "isActive": true,
+        },
+        "company": map[string]interface{}{
+            "name":    "Tech Corp",
+            "revenue": 1500000.50,
+        },
+        "currentDate": time.Now(),
+    }
+
+    // Process template with custom functions - creates "template_output.docx"
+    err := docx.CompleteTemplateWithFuncs("template.docx", data, funcMap)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Println("Document processed successfully!")
+}
+```
+
+### Traditional Step-by-Step Processing
 
 ```go
 package main
@@ -171,6 +253,79 @@ funcMap := template.FuncMap{
 
 ## API Reference
 
+### Convenience Functions
+
+#### One-Line Template Processing
+```go
+// Process template and auto-generate output file
+err := docx.CompleteTemplate("template.docx", data)
+// Creates: template_output.docx
+
+// Process template with custom output path
+err := docx.CompleteTemplateToFile("template.docx", data, "custom_output.docx")
+
+// Process template with custom functions
+err := docx.CompleteTemplateWithFuncs("template.docx", data, funcMap)
+// Creates: template_output.docx
+
+// Process template with custom functions and output path
+err := docx.CompleteTemplateWithFuncsToFile("template.docx", data, funcMap, "output.docx")
+```
+
+#### Cloud Storage Upload (MinIO, S3, etc.)
+```go
+// Process template and return as bytes for cloud upload
+docBytes, err := docx.CompleteTemplateToBytes("template.docx", data)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Upload to MinIO
+minioClient.PutObject(bucketName, objectName, bytes.NewReader(docBytes), int64(len(docBytes)), minio.PutObjectOptions{})
+
+// Process template with custom functions and return as bytes
+docBytes, err := docx.CompleteTemplateWithFuncsToBytes("template.docx", data, funcMap)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Upload to any cloud storage
+uploadToCloud(docBytes, "report.docx")
+```
+
+#### Serverless Processing (MinIO-to-MinIO, No File System)
+```go
+// Download template bytes from MinIO
+templateBytes, err := minioClient.GetObject(bucketName, "templates/report-template.docx", minio.GetObjectOptions{})
+if err != nil {
+    log.Fatal(err)
+}
+defer templateBytes.Close()
+
+templateData, err := ioutil.ReadAll(templateBytes)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Process template bytes with data (no file system involved)
+processedBytes, err := docx.CompleteTemplateFromBytesToBytes(templateData, data)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Upload processed bytes back to MinIO
+minioClient.PutObject(
+    bucketName, 
+    "processed/report.docx", 
+    bytes.NewReader(processedBytes), 
+    int64(len(processedBytes)), 
+    minio.PutObjectOptions{},
+)
+
+// With custom functions
+processedBytes, err := docx.CompleteTemplateFromBytesToBytesWithFuncs(templateData, data, funcMap)
+```
+
 ### Document Methods
 
 #### Opening Documents
@@ -195,6 +350,10 @@ doc.AddTemplateFuncs(funcMap)
 
 // Set template data
 doc.SetTemplateData(data)
+
+// Debug configuration
+doc.SetDebug(true)  // Enable debug logging
+doc.SetDebug(false) // Disable debug logging (default)
 ```
 
 #### File Operations
@@ -238,6 +397,130 @@ type Company struct {
     Revenue   float64
 }
 ```
+
+## Debug Mode
+
+The library provides comprehensive debug logging to help troubleshoot template processing issues, especially when dealing with missing fields or complex data structures.
+
+### Enabling Debug Mode
+
+```go
+doc, err := docx.Open("template.docx")
+if err != nil {
+    log.Fatal(err)
+}
+defer doc.Close()
+
+// Enable debug logging
+doc.SetDebug(true)
+
+// Your template processing...
+err = doc.ExecuteTemplate(data)
+```
+
+### Debug Output
+
+When debug mode is enabled, you'll see detailed information about:
+
+- **Template execution start/completion**
+- **Number of placeholders found**
+- **Each placeholder being processed**
+- **Field existence checking** (map vs struct)
+- **Missing field detection and skipping**
+- **Template execution results**
+- **Error handling for missing fields**
+
+#### Example Debug Output
+
+```
+[DEBUG] Starting template execution...
+[DEBUG] Found 6 template placeholders
+[DEBUG] Processing placeholder: {{.ppp}}
+[DEBUG] Field ppp: exists in map = false
+[DEBUG] Skipping placeholder {{.ppp}} - missing fields detected
+[DEBUG] Processing placeholder: {{.company}}
+[DEBUG] Field company: exists in map = true
+[DEBUG] Replacing placeholder {{.company}} with result: Tech Corp
+[DEBUG] Processing placeholder: {{.title}}
+[DEBUG] Field title: exists in map = true
+[DEBUG] Replacing placeholder {{.title}} with result: Software Engineer
+[DEBUG] Template execution completed successfully
+```
+
+### Debug Use Cases
+
+#### 1. Troubleshooting Missing Fields
+
+```go
+doc.SetDebug(true)
+
+data := map[string]interface{}{
+    "name": "John Doe",
+    "age":  30,
+    // Missing "email" field
+}
+
+err = doc.ExecuteTemplate(data)
+// Debug will show: "Field email: exists in map = false"
+// Debug will show: "Skipping placeholder {{.email}} - missing fields detected"
+```
+
+#### 2. Understanding Template Processing Order
+
+```go
+doc.SetDebug(true)
+
+// Debug shows the order of placeholder processing (right-to-left)
+// This helps understand why certain replacements work or fail
+```
+
+#### 3. Verifying Field Existence
+
+```go
+doc.SetDebug(true)
+
+// Debug shows whether fields exist in maps vs structs
+// Helps identify data structure issues
+```
+
+### Silent Mode (Default)
+
+Debug mode is **disabled by default** for silent operation:
+
+```go
+doc, err := docx.Open("template.docx")
+if err != nil {
+    log.Fatal(err)
+}
+defer doc.Close()
+
+// Debug is disabled by default - completely silent
+// doc.SetDebug(false) // Optional - this is the default
+
+err = doc.ExecuteTemplate(data)
+// No debug output - silent operation
+```
+
+### Debug API Reference
+
+```go
+// Enable debug logging
+doc.SetDebug(true)
+
+// Disable debug logging (default)
+doc.SetDebug(false)
+
+// Legacy method (still supported)
+doc.SetTemplateDebug(true)  // Deprecated: Use SetDebug instead
+```
+
+### Debug Best Practices
+
+1. **Enable debug during development** to understand template behavior
+2. **Disable debug in production** for optimal performance
+3. **Use debug to identify missing fields** before they cause issues
+4. **Check debug output** when templates don't behave as expected
+5. **Debug helps understand** the right-to-left processing order
 
 ## Examples
 
@@ -434,6 +717,300 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
+}
+```
+
+### Example 5: Convenience Functions
+
+```go
+package main
+
+import (
+    "log"
+    "strings"
+    "text/template"
+    "time"
+    
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Data structure
+    data := map[string]interface{}{
+        "user": map[string]interface{}{
+            "name":     "John Doe",
+            "email":    "john@example.com",
+            "isActive": true,
+        },
+        "company": map[string]interface{}{
+            "name":    "Tech Corp",
+            "revenue": 1500000.50,
+        },
+        "currentDate": time.Now(),
+    }
+
+    // Custom functions
+    funcMap := template.FuncMap{
+        "upper": strings.ToUpper,
+        "formatCurrency": func(amount float64) string {
+            return fmt.Sprintf("$%.2f", amount)
+        },
+    }
+
+    log.Println("=== Using Convenience Functions ===")
+
+    // Method 1: Simple one-line processing
+    err := docx.CompleteTemplate("template.docx", data)
+    if err != nil {
+        log.Fatal("CompleteTemplate failed:", err)
+    }
+    log.Println("✅ CompleteTemplate: template_output.docx created")
+
+    // Method 2: Custom output path
+    err = docx.CompleteTemplateToFile("template.docx", data, "report.docx")
+    if err != nil {
+        log.Fatal("CompleteTemplateToFile failed:", err)
+    }
+    log.Println("✅ CompleteTemplateToFile: report.docx created")
+
+    // Method 3: With custom functions
+    err = docx.CompleteTemplateWithFuncs("template.docx", data, funcMap)
+    if err != nil {
+        log.Fatal("CompleteTemplateWithFuncs failed:", err)
+    }
+    log.Println("✅ CompleteTemplateWithFuncs: template_output.docx created")
+
+    // Method 4: With custom functions and output path
+    err = docx.CompleteTemplateWithFuncsToFile("template.docx", data, funcMap, "final_report.docx")
+    if err != nil {
+        log.Fatal("CompleteTemplateWithFuncsToFile failed:", err)
+    }
+    log.Println("✅ CompleteTemplateWithFuncsToFile: final_report.docx created")
+
+    log.Println("\nAll convenience functions work perfectly!")
+}
+```
+
+### Example 6: Cloud Storage Upload (MinIO)
+
+```go
+package main
+
+import (
+    "bytes"
+    "log"
+    "strings"
+    "text/template"
+    
+    "github.com/minio/minio-go/v7"
+    "github.com/minio/minio-go/v7/pkg/credentials"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Data structure
+    data := map[string]interface{}{
+        "user": map[string]interface{}{
+            "name":     "John Doe",
+            "email":    "john@example.com",
+            "isActive": true,
+        },
+        "company": map[string]interface{}{
+            "name":    "Tech Corp",
+            "revenue": 1500000.50,
+        },
+    }
+
+    // Custom functions
+    funcMap := template.FuncMap{
+        "upper": strings.ToUpper,
+        "formatCurrency": func(amount float64) string {
+            return fmt.Sprintf("$%.2f", amount)
+        },
+    }
+
+    log.Println("=== Processing template for cloud upload ===")
+
+    // Process template and get bytes
+    docBytes, err := docx.CompleteTemplateWithFuncsToBytes("template.docx", data, funcMap)
+    if err != nil {
+        log.Fatal("Template processing failed:", err)
+    }
+    
+    log.Printf("✅ Generated document: %d bytes", len(docBytes))
+
+    // Initialize MinIO client
+    minioClient, err := minio.New("localhost:9000", &minio.Options{
+        Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+        Secure: false,
+    })
+    if err != nil {
+        log.Fatal("MinIO client creation failed:", err)
+    }
+
+    // Upload to MinIO
+    bucketName := "documents"
+    objectName := "reports/user-report.docx"
+    
+    _, err = minioClient.PutObject(
+        bucketName,
+        objectName,
+        bytes.NewReader(docBytes),
+        int64(len(docBytes)),
+        minio.PutObjectOptions{
+            ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+    )
+    if err != nil {
+        log.Fatal("MinIO upload failed:", err)
+    }
+
+    log.Printf("✅ Document uploaded successfully to MinIO: %s/%s", bucketName, objectName)
+    log.Println("Document is now available in cloud storage!")
+}
+```
+
+### Example 7: Serverless MinIO-to-MinIO Processing
+
+```go
+package main
+
+import (
+    "bytes"
+    "io/ioutil"
+    "log"
+    "strings"
+    "text/template"
+    
+    "github.com/minio/minio-go/v7"
+    "github.com/minio/minio-go/v7/pkg/credentials"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Data structure
+    data := map[string]interface{}{
+        "user": map[string]interface{}{
+            "name":     "John Doe",
+            "email":    "john@example.com",
+            "isActive": true,
+        },
+        "company": map[string]interface{}{
+            "name":    "Tech Corp",
+            "revenue": 1500000.50,
+        },
+    }
+
+    // Custom functions
+    funcMap := template.FuncMap{
+        "upper": strings.ToUpper,
+        "formatCurrency": func(amount float64) string {
+            return fmt.Sprintf("$%.2f", amount)
+        },
+    }
+
+    log.Println("=== Serverless MinIO-to-MinIO Processing ===")
+
+    // Initialize MinIO client
+    minioClient, err := minio.New("localhost:9000", &minio.Options{
+        Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+        Secure: false,
+    })
+    if err != nil {
+        log.Fatal("MinIO client creation failed:", err)
+    }
+
+    bucketName := "documents"
+
+    // Step 1: Download template bytes from MinIO
+    log.Println("📥 Downloading template from MinIO...")
+    templateObject, err := minioClient.GetObject(bucketName, "templates/report-template.docx", minio.GetObjectOptions{})
+    if err != nil {
+        log.Fatal("Failed to download template from MinIO:", err)
+    }
+    defer templateObject.Close()
+
+    templateBytes, err := ioutil.ReadAll(templateObject)
+    if err != nil {
+        log.Fatal("Failed to read template bytes:", err)
+    }
+    log.Printf("✅ Template downloaded: %d bytes", len(templateBytes))
+
+    // Step 2: Process template bytes with data (NO FILE SYSTEM INVOLVED!)
+    log.Println("⚙️ Processing template in memory...")
+    processedBytes, err := docx.CompleteTemplateFromBytesToBytesWithFuncs(templateBytes, data, funcMap)
+    if err != nil {
+        log.Fatal("Template processing failed:", err)
+    }
+    log.Printf("✅ Template processed: %d bytes", len(processedBytes))
+
+    // Step 3: Upload processed bytes back to MinIO
+    log.Println("📤 Uploading processed document to MinIO...")
+    outputObjectName := "processed/reports/user-report.docx"
+    
+    _, err = minioClient.PutObject(
+        bucketName,
+        outputObjectName,
+        bytes.NewReader(processedBytes),
+        int64(len(processedBytes)),
+        minio.PutObjectOptions{
+            ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+    )
+    if err != nil {
+        log.Fatal("Failed to upload to MinIO:", err)
+    }
+
+    log.Printf("✅ Document uploaded successfully to MinIO: %s/%s", bucketName, outputObjectName)
+    log.Println("🎉 Complete serverless workflow: MinIO → Process → MinIO")
+    log.Println("💡 Perfect for AWS Lambda, Google Cloud Functions, Azure Functions!")
+}
+```
+
+### Example 8: Debug Mode Usage
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    doc, err := docx.Open("template.docx")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer doc.Close()
+
+    // Enable debug logging to troubleshoot issues
+    doc.SetDebug(true)
+
+    // Data with some missing fields
+    data := map[string]interface{}{
+        "name":    "John Doe",
+        "age":     30,
+        "email":   "john@example.com",
+        // Missing: "title", "company" fields
+    }
+
+    log.Println("Processing template with debug enabled...")
+    
+    err = doc.ExecuteTemplate(data)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    err = doc.WriteToFile("output_debug.docx")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    log.Println("Check the debug output above to see:")
+    log.Println("- Which fields were found/missing")
+    log.Println("- How placeholders were processed")
+    log.Println("- Why certain replacements were skipped")
 }
 ```
 

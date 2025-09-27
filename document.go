@@ -138,6 +138,181 @@ func (d *Document) SetTemplateData(data TemplateData) {
 	d.templateReplacer.SetData(data)
 }
 
+// SetDebug enables or disables debug logging for template processing.
+func (d *Document) SetDebug(debug bool) {
+	d.templateReplacer.SetDebug(debug)
+}
+
+// SetTemplateDebug enables or disables debug logging for template processing.
+// Deprecated: Use SetDebug instead.
+func (d *Document) SetTemplateDebug(debug bool) {
+	d.templateReplacer.SetDebug(debug)
+}
+
+// CompleteTemplate is a convenience function that opens a template, processes it with data,
+// and writes the result to a file. The output file will be created in the same directory
+// as the template with "_output" suffix.
+func CompleteTemplate(templatePath string, data TemplateData) error {
+	return CompleteTemplateToFile(templatePath, data, "")
+}
+
+// CompleteTemplateToFile is a convenience function that opens a template, processes it with data,
+// and writes the result to the specified output file. If outputPath is empty, it will create
+// an output file in the same directory as the template with "_output" suffix.
+func CompleteTemplateToFile(templatePath string, data TemplateData, outputPath string) error {
+	// Open the template document
+	doc, err := Open(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to open template: %w", err)
+	}
+	defer doc.Close()
+
+	// Process the template with data
+	err = doc.ExecuteTemplate(data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Determine output path if not provided
+	if outputPath == "" {
+		// Create output path by adding "_output" before the extension
+		outputPath = generateOutputPath(templatePath)
+	}
+
+	// Write the result
+	err = doc.WriteToFile(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	return nil
+}
+
+// CompleteTemplateWithFuncs is a convenience function that opens a template, processes it with data
+// and custom functions, and writes the result to a file.
+func CompleteTemplateWithFuncs(templatePath string, data TemplateData, funcMap template.FuncMap) error {
+	return CompleteTemplateWithFuncsToFile(templatePath, data, funcMap, "")
+}
+
+// CompleteTemplateWithFuncsToFile is a convenience function that opens a template, processes it with data
+// and custom functions, and writes the result to the specified output file.
+func CompleteTemplateWithFuncsToFile(templatePath string, data TemplateData, funcMap template.FuncMap, outputPath string) error {
+	// Open the template document
+	doc, err := Open(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to open template: %w", err)
+	}
+	defer doc.Close()
+
+	// Process the template with data and functions
+	err = doc.ExecuteTemplateWithFuncs(data, funcMap)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Determine output path if not provided
+	if outputPath == "" {
+		// Create output path by adding "_output" before the extension
+		outputPath = generateOutputPath(templatePath)
+	}
+
+	// Write the result
+	err = doc.WriteToFile(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	return nil
+}
+
+// generateOutputPath creates an output file path by adding "_output" before the file extension
+func generateOutputPath(templatePath string) string {
+	// Split the path into directory, filename, and extension
+	dir := filepath.Dir(templatePath)
+	filename := filepath.Base(templatePath)
+	ext := filepath.Ext(filename)
+	nameWithoutExt := filename[:len(filename)-len(ext)]
+
+	// Create output filename
+	outputFilename := nameWithoutExt + "_output" + ext
+
+	// Combine directory and output filename
+	return filepath.Join(dir, outputFilename)
+}
+
+// CompleteTemplateToBytes is a convenience function that opens a template, processes it with data,
+// and returns the result as bytes. Perfect for uploading to cloud storage like MinIO, S3, etc.
+func CompleteTemplateToBytes(templatePath string, data TemplateData) ([]byte, error) {
+	return CompleteTemplateWithFuncsToBytes(templatePath, data, nil)
+}
+
+// CompleteTemplateWithFuncsToBytes is a convenience function that opens a template, processes it with data
+// and custom functions, and returns the result as bytes. Perfect for uploading to cloud storage.
+func CompleteTemplateWithFuncsToBytes(templatePath string, data TemplateData, funcMap template.FuncMap) ([]byte, error) {
+	// Open the template document
+	doc, err := Open(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open template: %w", err)
+	}
+	defer doc.Close()
+
+	// Process the template with data and functions
+	if funcMap != nil {
+		err = doc.ExecuteTemplateWithFuncs(data, funcMap)
+	} else {
+		err = doc.ExecuteTemplate(data)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Write the result to a buffer
+	var buf bytes.Buffer
+	err = doc.Write(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write document to buffer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// CompleteTemplateFromBytesToBytes is a convenience function that processes template bytes with data
+// and returns the result as bytes. Perfect for serverless environments where you get template from MinIO
+// and want to return processed bytes for upload back to MinIO - no file system involved.
+func CompleteTemplateFromBytesToBytes(templateBytes []byte, data TemplateData) ([]byte, error) {
+	return CompleteTemplateFromBytesToBytesWithFuncs(templateBytes, data, nil)
+}
+
+// CompleteTemplateFromBytesToBytesWithFuncs is a convenience function that processes template bytes with data
+// and custom functions, returning the result as bytes. Perfect for serverless environments and cloud processing.
+func CompleteTemplateFromBytesToBytesWithFuncs(templateBytes []byte, data TemplateData, funcMap template.FuncMap) ([]byte, error) {
+	// Open the template document from bytes
+	doc, err := OpenBytes(templateBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open template from bytes: %w", err)
+	}
+	defer doc.Close()
+
+	// Process the template with data and functions
+	if funcMap != nil {
+		err = doc.ExecuteTemplateWithFuncs(data, funcMap)
+	} else {
+		err = doc.ExecuteTemplate(data)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Write the result to a buffer
+	var buf bytes.Buffer
+	err = doc.Write(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write document to buffer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
 // GetFile returns the content of the given fileName if it exists.
 func (d *Document) GetFile(fileName string) []byte {
 	if f, exists := d.files[fileName]; exists {
