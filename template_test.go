@@ -99,7 +99,7 @@ func TestParseTemplatePlaceholders(t *testing.T) {
 func TestTemplatePlaceholderProcessing(t *testing.T) {
 	// Test template content processing
 	templateContent := "{{.name | upper}}"
-	
+
 	// Create a simple template with functions
 	funcMap := template.FuncMap{
 		"upper": strings.ToUpper,
@@ -156,4 +156,35 @@ func TestDocumentTemplateAPI(t *testing.T) {
 		t.Error("template execution failed", err)
 		return
 	}
+}
+
+func TestTemplateReplacer_MissingFields(t *testing.T) {
+	// Open test document
+	doc, err := Open("./test/template.docx")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Test data with missing fields (only some fields present)
+	data := map[string]interface{}{
+		"name": "John Doe",
+		// Missing: age, email, isActive, currentDate
+	}
+
+	// Execute template - this should not fail even with missing fields
+	err = doc.ExecuteTemplate(data)
+	if err != nil {
+		t.Error("template execution should not fail with missing fields", err)
+		return
+	}
+
+	// Write output to verify document is not corrupted
+	err = doc.WriteToFile("./test/missing_fields_output.docx")
+	if err != nil {
+		t.Error("unable to write output with missing fields", err)
+		return
+	}
+
+	t.Log("Successfully handled missing fields without corruption")
 }

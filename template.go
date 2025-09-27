@@ -3,6 +3,7 @@ package docx
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 )
 
@@ -85,6 +86,12 @@ func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlac
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, tr.data)
 	if err != nil {
+		// Check if the error is due to missing field/property
+		// If so, skip this placeholder instead of failing
+		if tr.isMissingFieldError(err) {
+			// Skip this placeholder - leave it unchanged in the document
+			return nil
+		}
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
@@ -95,6 +102,35 @@ func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlac
 	}
 
 	return nil
+}
+
+// isMissingFieldError checks if the error is due to a missing field/property in the data structure
+func (tr *TemplateReplacer) isMissingFieldError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Common Go template errors for missing fields
+	missingFieldErrors := []string{
+		"no such field",
+		"can't evaluate field",
+		"can't find method",
+		"no such method",
+		"can't access field",
+		"undefined field",
+		"nil pointer",
+		"invalid value",
+	}
+
+	for _, missingErr := range missingFieldErrors {
+		if strings.Contains(strings.ToLower(errStr), missingErr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // replacePlaceholder replaces a template placeholder with the executed result
