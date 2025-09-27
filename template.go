@@ -3,6 +3,7 @@ package docx
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -78,6 +79,12 @@ func (tr *TemplateReplacer) extractTemplatePlaceholders() ([]*TemplatePlaceholde
 
 // processTemplatePlaceholder processes a single template placeholder
 func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlaceholder) error {
+	// Check if the template references missing fields BEFORE executing
+	if tr.hasMissingFields(placeholder.TemplateContent) {
+		// Skip this placeholder - leave it unchanged in the document
+		return nil
+	}
+
 	// Parse the template content
 	tmpl, err := tr.tmpl.Parse(placeholder.TemplateContent)
 	if err != nil {
@@ -97,8 +104,15 @@ func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlac
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
+	// Check if the result contains "<no value>" which indicates missing fields
+	result := buf.String()
+	if strings.Contains(result, "<no value>") {
+		// Skip this placeholder - leave it unchanged in the document
+		return nil
+	}
+
 	// Replace the placeholder with the executed result
-	err = tr.replacePlaceholder(placeholder, buf.String())
+	err = tr.replacePlaceholder(placeholder, result)
 	if err != nil {
 		return fmt.Errorf("failed to replace placeholder: %w", err)
 	}
@@ -133,6 +147,67 @@ func (tr *TemplateReplacer) isMissingFieldError(err error) bool {
 	}
 
 	return false
+}
+
+// hasMissingFields checks if the template content references fields that don't exist in the data
+func (tr *TemplateReplacer) hasMissingFields(templateContent string) bool {
+	if tr.data == nil {
+		return true
+	}
+
+	// Extract field names from template content like {{.fieldName}}
+	// This is a simple regex to find field references
+	fieldPattern := `\{\{\.([^}]+)\}\}`
+	matches := regexp.MustCompile(fieldPattern).FindAllStringSubmatch(templateContent, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			fieldName := match[1]
+			if !tr.fieldExists(fieldName) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// fieldExists checks if a field exists in the data structure
+func (tr *TemplateReplacer) fieldExists(fieldName string) bool {
+	if tr.data == nil {
+		return false
+	}
+
+	// Handle map[string]interface{}
+	if dataMap, ok := tr.data.(map[string]interface{}); ok {
+		_, exists := dataMap[fieldName]
+		return exists
+	}
+
+	// Handle structs - use reflection to check if field exists
+	// This is a simplified check - for complex nested fields, we'd need more sophisticated logic
+	return tr.checkStructField(fieldName)
+}
+
+// checkStructField checks if a field exists in a struct using reflection
+func (tr *TemplateReplacer) checkStructField(fieldName string) bool {
+	// For now, we'll use a simple approach - try to execute a minimal template
+	// and see if it fails with a missing field error
+	testTemplate := fmt.Sprintf("{{.%s}}", fieldName)
+	tmpl, err := template.New("test").Parse(testTemplate)
+	if err != nil {
+		return false
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, tr.data)
+	if err != nil {
+		return tr.isMissingFieldError(err)
+	}
+
+	// If execution succeeds and doesn't produce "<no value>", the field exists
+	result := buf.String()
+	return !strings.Contains(result, "<no value>")
 }
 
 // replacePlaceholder replaces a template placeholder with the executed result
