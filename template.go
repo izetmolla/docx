@@ -1,0 +1,226 @@
+package docx
+
+import (
+	"bytes"
+	"fmt"
+	"text/template"
+)
+
+// TemplateData represents the data structure that can be used in templates
+type TemplateData interface{}
+
+// TemplateReplacer provides template-based replacement functionality
+type TemplateReplacer struct {
+	document *Document
+	tmpl     *template.Template
+	data     TemplateData
+}
+
+// NewTemplateReplacer creates a new template replacer for the given document
+func NewTemplateReplacer(doc *Document) *TemplateReplacer {
+	return &TemplateReplacer{
+		document: doc,
+		tmpl:     template.New("docx-template"),
+	}
+}
+
+// SetData sets the data to be used for template execution
+func (tr *TemplateReplacer) SetData(data TemplateData) {
+	tr.data = data
+}
+
+// AddFuncs adds custom functions to the template
+func (tr *TemplateReplacer) AddFuncs(funcMap template.FuncMap) {
+	tr.tmpl = tr.tmpl.Funcs(funcMap)
+}
+
+// ExecuteTemplate replaces all template placeholders in the document
+// Template placeholders use Go template syntax: {{.field}}, {{if .condition}}...{{end}}, etc.
+func (tr *TemplateReplacer) ExecuteTemplate() error {
+	if tr.data == nil {
+		return fmt.Errorf("template data not set, call SetData() first")
+	}
+
+	// Extract all template placeholders from the document
+	templatePlaceholders, err := tr.extractTemplatePlaceholders()
+	if err != nil {
+		return fmt.Errorf("failed to extract template placeholders: %w", err)
+	}
+
+	// Process each template placeholder
+	for _, placeholder := range templatePlaceholders {
+		err := tr.processTemplatePlaceholder(placeholder)
+		if err != nil {
+			return fmt.Errorf("failed to process template placeholder %s: %w", placeholder.TemplateContent, err)
+		}
+	}
+
+	return nil
+}
+
+// extractTemplatePlaceholders finds all Go template syntax placeholders in the document
+func (tr *TemplateReplacer) extractTemplatePlaceholders() ([]*TemplatePlaceholder, error) {
+	var templatePlaceholders []*TemplatePlaceholder
+
+	for fileName := range tr.document.files {
+		placeholders, err := ParseTemplatePlaceholders(tr.document.runParsers[fileName].Runs(), tr.document.GetFile(fileName), fileName)
+		if err != nil {
+			return nil, err
+		}
+		templatePlaceholders = append(templatePlaceholders, placeholders...)
+	}
+
+	return templatePlaceholders, nil
+}
+
+// processTemplatePlaceholder processes a single template placeholder
+func (tr *TemplateReplacer) processTemplatePlaceholder(placeholder *TemplatePlaceholder) error {
+	// Parse the template content
+	tmpl, err := tr.tmpl.Parse(placeholder.TemplateContent)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	// Execute the template with the provided data
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, tr.data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Replace the placeholder with the executed result
+	err = tr.replacePlaceholder(placeholder, buf.String())
+	if err != nil {
+		return fmt.Errorf("failed to replace placeholder: %w", err)
+	}
+
+	return nil
+}
+
+// replacePlaceholder replaces a template placeholder with the executed result
+func (tr *TemplateReplacer) replacePlaceholder(placeholder *TemplatePlaceholder, result string) error {
+	// Get the document bytes for the file
+	docBytes := tr.document.GetFile(placeholder.FileName)
+	if docBytes == nil {
+		return fmt.Errorf("file %s not found", placeholder.FileName)
+	}
+
+	// Calculate positions
+	startPos := int(placeholder.Placeholder.StartPos())
+	endPos := int(placeholder.Placeholder.EndPos())
+
+	// Replace the placeholder content
+	newBytes := make([]byte, len(docBytes)-(endPos-startPos)+len(result))
+	copy(newBytes, docBytes[:startPos])
+	copy(newBytes[startPos:], result)
+	copy(newBytes[startPos+len(result):], docBytes[endPos:])
+
+	// Update the document
+	return tr.document.SetFile(placeholder.FileName, newBytes)
+}
+
+// TemplatePlaceholder represents a template placeholder found in the document
+type TemplatePlaceholder struct {
+	Placeholder     *Placeholder
+	FileName        string
+	TemplateContent string
+	Key             string
+}
+
+// Placeholder represents a parsed placeholder from the docx-archive.
+type Placeholder struct {
+	Fragments []*PlaceholderFragment
+}
+
+// StartPos returns the absolute start position of the placeholder.
+func (p Placeholder) StartPos() int64 {
+	return p.Fragments[0].Run.Text.OpenTag.End + p.Fragments[0].Position.Start
+}
+
+// EndPos returns the absolute end position of the placeholder.
+func (p Placeholder) EndPos() int64 {
+	end := len(p.Fragments) - 1
+	return p.Fragments[end].Run.Text.OpenTag.End + p.Fragments[end].Position.End
+}
+
+// PlaceholderFragment represents a fragment of a placeholder
+type PlaceholderFragment struct {
+	Position Position
+	Run      *Run
+}
+
+// ParseTemplatePlaceholders extracts Go template syntax placeholders from document runs
+func ParseTemplatePlaceholders(runs DocumentRuns, docBytes []byte, fileName string) ([]*TemplatePlaceholder, error) {
+	var templatePlaceholders []*TemplatePlaceholder
+
+	for _, run := range runs.WithText() {
+		runText := run.GetText(docBytes)
+
+		// Find template placeholders using Go template syntax
+		templateStarts := findTemplateStarts(runText)
+		templateEnds := findTemplateEnds(runText)
+
+		// Match template starts with ends
+		for i, start := range templateStarts {
+			if i < len(templateEnds) {
+				end := templateEnds[i]
+				templateContent := runText[start : end+2] // +2 to include }}
+
+				// Create placeholder fragment
+				fragment := &PlaceholderFragment{
+					Position: Position{int64(start), int64(end + 2)},
+					Run:      run,
+				}
+				placeholder := &Placeholder{Fragments: []*PlaceholderFragment{fragment}}
+
+				// Extract the key (content between {{ and }})
+				key := templateContent[2 : len(templateContent)-2] // Remove {{ and }}
+
+				templatePlaceholder := &TemplatePlaceholder{
+					Placeholder:     placeholder,
+					FileName:        fileName,
+					TemplateContent: templateContent,
+					Key:             key,
+				}
+
+				templatePlaceholders = append(templatePlaceholders, templatePlaceholder)
+			}
+		}
+	}
+
+	return templatePlaceholders, nil
+}
+
+// findTemplateStarts finds all positions of "{{" in the text
+func findTemplateStarts(text string) []int {
+	var starts []int
+	for i := 0; i < len(text)-1; i++ {
+		if text[i] == '{' && text[i+1] == '{' {
+			starts = append(starts, i)
+		}
+	}
+	return starts
+}
+
+// findTemplateEnds finds all positions of "}}" in the text
+func findTemplateEnds(text string) []int {
+	var ends []int
+	for i := 0; i < len(text)-1; i++ {
+		if text[i] == '}' && text[i+1] == '}' {
+			ends = append(ends, i)
+		}
+	}
+	return ends
+}
+
+// ExecuteTemplateWithData is a convenience method that combines SetData and ExecuteTemplate
+func (tr *TemplateReplacer) ExecuteTemplateWithData(data TemplateData) error {
+	tr.SetData(data)
+	return tr.ExecuteTemplate()
+}
+
+// ExecuteTemplateWithFuncs is a convenience method that adds functions and executes template
+func (tr *TemplateReplacer) ExecuteTemplateWithFuncs(data TemplateData, funcMap template.FuncMap) error {
+	tr.AddFuncs(funcMap)
+	return tr.ExecuteTemplateWithData(data)
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t>TEXT0</w:t>
+      </w:r>
+      <w:r>
+        <w:t>TEXT1</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:t>TEXT2</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:t>TEXT3</w:t>
+      </w:r>
+      <w:r>
+        <w:t>TEXT4</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <!-- Empty run -->
+      </w:r>
+      <w:r>
+        <!-- Another empty run -->
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>
