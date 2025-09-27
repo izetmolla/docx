@@ -48,8 +48,10 @@ func (tr *TemplateReplacer) ExecuteTemplate() error {
 		return fmt.Errorf("failed to extract template placeholders: %w", err)
 	}
 
-	// Process each template placeholder
-	for _, placeholder := range templatePlaceholders {
+	// Process each template placeholder in reverse order to avoid position conflicts
+	// This ensures that earlier positions remain valid after replacements
+	for i := len(templatePlaceholders) - 1; i >= 0; i-- {
+		placeholder := templatePlaceholders[i]
 		err := tr.processTemplatePlaceholder(placeholder)
 		if err != nil {
 			return fmt.Errorf("failed to process template placeholder %s: %w", placeholder.TemplateContent, err)
