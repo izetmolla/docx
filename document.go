@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -170,8 +169,10 @@ func (d *Document) parseArchive() error {
 		if err != nil {
 			return nil
 		}
-		defer readCloser.Close()
-		fileBytes, err := ioutil.ReadAll(readCloser)
+		defer func() {
+			_ = readCloser.Close()
+		}()
+		fileBytes, err := io.ReadAll(readCloser)
 		if err != nil {
 			return nil
 		}
@@ -215,7 +216,9 @@ func (d *Document) WriteToFile(file string) error {
 	if err != nil {
 		return err
 	}
-	defer target.Close()
+	defer func() {
+		_ = target.Close()
+	}()
 
 	return d.Write(target)
 }
@@ -225,7 +228,9 @@ func (d *Document) WriteToFile(file string) error {
 // Files which cannot be modified through this lib will just be read from the original docx and copied into the writer.
 func (d *Document) Write(writer io.Writer) error {
 	zipWriter := zip.NewWriter(writer)
-	defer zipWriter.Close()
+	defer func() {
+		_ = zipWriter.Close()
+	}()
 
 	// writeModifiedFile will check if the given zipFile is a file which was modified and writes it.
 	// If the file is not one of the modified files, false is returned.
