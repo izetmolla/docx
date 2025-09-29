@@ -23,6 +23,7 @@ func main() {
 		"company": "Tech Corp",
 	}
 
+	doc.SetDebug(true)
 	// Execute template
 	err = doc.ExecuteTemplate(data)
 	if err != nil {

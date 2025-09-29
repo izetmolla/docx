@@ -333,10 +333,18 @@ func ParseTemplatePlaceholders(runs DocumentRuns, docBytes []byte, fileName stri
 }
 
 // findTemplateStarts finds all positions of "{{" in the text
+// Handles both regular braces and Unicode variants that might be introduced by copy-paste
 func findTemplateStarts(text string) []int {
 	var starts []int
-	for i := 0; i < len(text)-1; i++ {
-		if text[i] == '{' && text[i+1] == '{' {
+	runes := []rune(text)
+
+	for i := 0; i < len(runes)-1; i++ {
+		// Check for regular braces
+		if runes[i] == '{' && runes[i+1] == '{' {
+			starts = append(starts, i)
+		}
+		// Check for Unicode left double quotation mark variants (U+201C)
+		if runes[i] == '\u201C' && runes[i+1] == '\u201C' {
 			starts = append(starts, i)
 		}
 	}
@@ -344,10 +352,18 @@ func findTemplateStarts(text string) []int {
 }
 
 // findTemplateEnds finds all positions of "}}" in the text
+// Handles both regular braces and Unicode variants that might be introduced by copy-paste
 func findTemplateEnds(text string) []int {
 	var ends []int
-	for i := 0; i < len(text)-1; i++ {
-		if text[i] == '}' && text[i+1] == '}' {
+	runes := []rune(text)
+
+	for i := 0; i < len(runes)-1; i++ {
+		// Check for regular braces
+		if runes[i] == '}' && runes[i+1] == '}' {
+			ends = append(ends, i)
+		}
+		// Check for Unicode right double quotation mark variants (U+201D)
+		if runes[i] == '\u201D' && runes[i+1] == '\u201D' {
 			ends = append(ends, i)
 		}
 	}
