@@ -11,6 +11,7 @@ This library provides template-based processing for docx documents using Go's st
 ## Features
 
 - **Template-Based**: Uses Go's `text/template` package for advanced document processing
+- **String-Based Replacement**: Simple `{placeholder}` replacement using PlaceholderMap
 - **Fast**: Operates directly on byte contents for optimal performance
 - **Zero Dependencies**: Built with Go standard library only
 - **Advanced Features**: Conditional logic, loops, custom functions, and complex data structures
@@ -29,7 +30,42 @@ go get github.com/izetmolla/docx
 
 ## Quick Start
 
-### Simple One-Line Processing
+### String-Based Placeholder Replacement
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    // Define placeholder replacements
+    replaceMap := docx.PlaceholderMap{
+        "key":                         "REPLACE some more",
+        "key-with-dash":               "REPLACE",
+        "key-with-dashes":             "REPLACE",
+        "key with space":              "REPLACE",
+        "key_with_underscore":         "REPLACE",
+        "multiline":                   "REPLACE",
+        "key.with.dots":               "REPLACE",
+        "mixed-key.separator_styles#": "REPLACE",
+        "yet-another_placeholder":     "REPLACE",
+        "foo":                         "bar",
+    }
+
+    // Process document in one line - automatically creates "template_output.docx"
+    err := docx.CompleteReplaceAll("template.docx", replaceMap)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Println("Document processed successfully!")
+}
+```
+
+### Simple One-Line Template Processing
 
 ```go
 package main
@@ -162,7 +198,23 @@ func main() {
 }
 ```
 
-## Template Syntax
+## Placeholder Syntax
+
+### String-Based Placeholders
+
+Use simple `{placeholder}` syntax in your Word documents:
+
+```
+Hello {name},
+
+Welcome to {company}!
+
+Your account status: {status}
+Revenue: {revenue}
+Generated on: {date}
+```
+
+### Template Syntax
 
 Use Go template syntax in your Word documents:
 
@@ -255,6 +307,22 @@ funcMap := template.FuncMap{
 
 ### Convenience Functions
 
+#### One-Line String-Based Replacement
+```go
+// Process document and auto-generate output file
+err := docx.CompleteReplaceAll("template.docx", replaceMap)
+// Creates: template_output.docx
+
+// Process document with custom output path
+err := docx.CompleteReplaceAllToFile("template.docx", replaceMap, "custom_output.docx")
+
+// Process document and return as bytes for cloud upload
+docBytes, err := docx.CompleteReplaceAllToBytes("template.docx", replaceMap)
+
+// Process template bytes with placeholders (serverless)
+processedBytes, err := docx.CompleteReplaceAllFromBytesToBytes(templateBytes, replaceMap)
+```
+
 #### One-Line Template Processing
 ```go
 // Process template and auto-generate output file
@@ -337,6 +405,15 @@ doc, err := docx.Open("template.docx")
 doc, err := docx.OpenBytes(documentBytes)
 ```
 
+#### String-Based Replacement
+```go
+// Replace all placeholders
+err = doc.ReplaceAll(replaceMap)
+
+// Enable debug logging for replacement
+doc.stringReplacer.SetDebug(true)
+```
+
 #### Template Processing
 ```go
 // Simple template execution
@@ -380,6 +457,9 @@ doc.Close()
 ### Data Types
 
 ```go
+// PlaceholderMap for string-based replacement
+type PlaceholderMap map[string]string
+
 // TemplateData can be any Go type
 type TemplateData interface{}
 
@@ -524,7 +604,95 @@ doc.SetTemplateDebug(true)  // Deprecated: Use SetDebug instead
 
 ## Examples
 
-### Example 1: Simple Template Processing
+### Example 1: String-Based Placeholder Replacement
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    doc, err := docx.Open("template.docx")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer doc.Close()
+
+    replaceMap := docx.PlaceholderMap{
+        "name":    "John Doe",
+        "company": "Tech Corp",
+        "status":  "Active",
+        "revenue": "$1,500,000",
+        "date":    "2024-01-15",
+    }
+
+    err = doc.ReplaceAll(replaceMap)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    err = doc.WriteToFile("output.docx")
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Example 2: Advanced String-Based Replacement with Convenience Functions
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/izetmolla/docx"
+)
+
+func main() {
+    replaceMap := docx.PlaceholderMap{
+        "key":                         "REPLACE some more",
+        "key-with-dash":               "REPLACE",
+        "key-with-dashes":             "REPLACE",
+        "key with space":              "REPLACE",
+        "key_with_underscore":         "REPLACE",
+        "multiline":                   "REPLACE",
+        "key.with.dots":               "REPLACE",
+        "mixed-key.separator_styles#": "REPLACE",
+        "yet-another_placeholder":     "REPLACE",
+        "foo":                         "bar",
+    }
+
+    log.Println("=== Using String-Based Replacement Convenience Functions ===")
+
+    // Method 1: Simple one-line processing
+    err := docx.CompleteReplaceAll("template.docx", replaceMap)
+    if err != nil {
+        log.Fatal("CompleteReplaceAll failed:", err)
+    }
+    log.Println("✅ CompleteReplaceAll: template_output.docx created")
+
+    // Method 2: Custom output path
+    err = docx.CompleteReplaceAllToFile("template.docx", replaceMap, "report.docx")
+    if err != nil {
+        log.Fatal("CompleteReplaceAllToFile failed:", err)
+    }
+    log.Println("✅ CompleteReplaceAllToFile: report.docx created")
+
+    // Method 3: Return as bytes for cloud upload
+    docBytes, err := docx.CompleteReplaceAllToBytes("template.docx", replaceMap)
+    if err != nil {
+        log.Fatal("CompleteReplaceAllToBytes failed:", err)
+    }
+    log.Printf("✅ CompleteReplaceAllToBytes: %d bytes generated", len(docBytes))
+
+    log.Println("\nAll string-based replacement functions work perfectly!")
+}
+```
+
+### Example 3: Simple Template Processing
 
 ```go
 package main
@@ -559,7 +727,7 @@ func main() {
 }
 ```
 
-### Example 2: Advanced Template with Custom Functions
+### Example 4: Advanced Template with Custom Functions
 
 ```go
 package main
@@ -623,7 +791,7 @@ func main() {
 }
 ```
 
-### Example 3: Using Structs
+### Example 5: Using Structs
 
 ```go
 package main
@@ -674,7 +842,7 @@ func main() {
 }
 ```
 
-### Example 4: Image Replacement
+### Example 6: Image Replacement
 
 ```go
 package main
@@ -720,7 +888,7 @@ func main() {
 }
 ```
 
-### Example 5: Convenience Functions
+### Example 7: Convenience Functions
 
 ```go
 package main
@@ -791,7 +959,7 @@ func main() {
 }
 ```
 
-### Example 6: Cloud Storage Upload (MinIO)
+### Example 8: Cloud Storage Upload (MinIO)
 
 ```go
 package main
@@ -870,7 +1038,7 @@ func main() {
 }
 ```
 
-### Example 7: Serverless MinIO-to-MinIO Processing
+### Example 9: Serverless MinIO-to-MinIO Processing
 
 ```go
 package main
@@ -967,7 +1135,7 @@ func main() {
 }
 ```
 
-### Example 8: Debug Mode Usage
+### Example 10: Debug Mode Usage
 
 ```go
 package main

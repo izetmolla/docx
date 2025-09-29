@@ -25,6 +25,9 @@ var (
 	MediaPathRegex = regexp.MustCompile(`word/media/*`)
 )
 
+// PlaceholderMap represents a map of placeholder keys to their replacement values
+type PlaceholderMap map[string]string
+
 // Document exposes the main API of the library for template-based document processing.
 // It represents a docx document that will be processed using Go's text/template package.
 type Document struct {
@@ -46,6 +49,8 @@ type Document struct {
 
 	// Template processing components
 	templateReplacer *TemplateReplacer
+	// String-based placeholder replacement components
+	stringReplacer *StringReplacer
 }
 
 // Open will open and parse the file pointed to by path.
@@ -114,6 +119,9 @@ func newDocument(zipFile *zip.Reader, path string, docxFile *os.File) (*Document
 	// Initialize template replacer
 	doc.templateReplacer = NewTemplateReplacer(doc)
 
+	// Initialize string replacer
+	doc.stringReplacer = NewStringReplacer(doc)
+
 	return doc, nil
 }
 
@@ -147,6 +155,12 @@ func (d *Document) SetDebug(debug bool) {
 // Deprecated: Use SetDebug instead.
 func (d *Document) SetTemplateDebug(debug bool) {
 	d.templateReplacer.SetDebug(debug)
+}
+
+// ReplaceAll replaces all string-based placeholders in the document using the provided PlaceholderMap.
+// Placeholders are delimited with { and } and can contain any characters except the delimiters.
+func (d *Document) ReplaceAll(replaceMap PlaceholderMap) error {
+	return d.stringReplacer.ReplaceAll(replaceMap)
 }
 
 // CompleteTemplate is a convenience function that opens a template, processes it with data,
@@ -301,6 +315,98 @@ func CompleteTemplateFromBytesToBytesWithFuncs(templateBytes []byte, data Templa
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Write the result to a buffer
+	var buf bytes.Buffer
+	err = doc.Write(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write document to buffer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// CompleteReplaceAll is a convenience function that opens a document, replaces all placeholders,
+// and writes the result to a file. The output file will be created in the same directory
+// as the template with "_output" suffix.
+func CompleteReplaceAll(templatePath string, replaceMap PlaceholderMap) error {
+	return CompleteReplaceAllToFile(templatePath, replaceMap, "")
+}
+
+// CompleteReplaceAllToFile is a convenience function that opens a document, replaces all placeholders,
+// and writes the result to the specified output file. If outputPath is empty, it will create
+// an output file in the same directory as the template with "_output" suffix.
+func CompleteReplaceAllToFile(templatePath string, replaceMap PlaceholderMap, outputPath string) error {
+	// Open the template document
+	doc, err := Open(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to open template: %w", err)
+	}
+	defer doc.Close()
+
+	// Replace all placeholders
+	err = doc.ReplaceAll(replaceMap)
+	if err != nil {
+		return fmt.Errorf("failed to replace placeholders: %w", err)
+	}
+
+	// Determine output path if not provided
+	if outputPath == "" {
+		// Create output path by adding "_output" before the extension
+		outputPath = generateOutputPath(templatePath)
+	}
+
+	// Write the result
+	err = doc.WriteToFile(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	return nil
+}
+
+// CompleteReplaceAllToBytes is a convenience function that opens a document, replaces all placeholders,
+// and returns the result as bytes. Perfect for uploading to cloud storage like MinIO, S3, etc.
+func CompleteReplaceAllToBytes(templatePath string, replaceMap PlaceholderMap) ([]byte, error) {
+	// Open the template document
+	doc, err := Open(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open template: %w", err)
+	}
+	defer doc.Close()
+
+	// Replace all placeholders
+	err = doc.ReplaceAll(replaceMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to replace placeholders: %w", err)
+	}
+
+	// Write the result to a buffer
+	var buf bytes.Buffer
+	err = doc.Write(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write document to buffer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// CompleteReplaceAllFromBytesToBytes is a convenience function that processes template bytes with placeholders
+// and returns the result as bytes. Perfect for serverless environments where you get template from MinIO
+// and want to return processed bytes for upload back to MinIO - no file system involved.
+func CompleteReplaceAllFromBytesToBytes(templateBytes []byte, replaceMap PlaceholderMap) ([]byte, error) {
+	// Open the template document from bytes
+	doc, err := OpenBytes(templateBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open template from bytes: %w", err)
+	}
+	defer doc.Close()
+
+	// Replace all placeholders
+	err = doc.ReplaceAll(replaceMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to replace placeholders: %w", err)
 	}
 
 	// Write the result to a buffer
